@@ -1,0 +1,10 @@
+# Python függőségek (pip install -r requirements.txt)
+requests
+Pillow
+
+# Szükséges rendszerkönyvtárak és programok (apt install vagy hasonló):
+# - python3-gi (PyGObject GTK és GStreamer bindingek)
+# - gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly (GStreamer kodekek)
+# - gir1.2-gtk-3.0 gir1.2-gst-1.0 gir1.2-rsvg-2.0 (GObject Introspection bindingek)
+# - librsvg2-2 librsvg2-common (SVG támogatás)
+# - libwebp-dev libwebpdemux2 (WebP képformátum támogatás)
