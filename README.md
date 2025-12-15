@@ -34,7 +34,8 @@ A NetRadio & TV egy Python és GTK3 alapú alkalmazás, amely több mint **100.0
 *   🎧 **Metadata Support:** Displays song titles, artist information, and station logos.
 
 ## 📸 Screenshots
-*(Add screenshots here)*
+![Main Window](main.png)
+![TV Player](video.png)
 
 ## 📥 Installation
 
