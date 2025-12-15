@@ -1,0 +1,25 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background Circle -->
+  <circle cx="256" cy="256" r="240" fill="#3daee9" />
+  
+  <!-- TV Screen -->
+  <rect x="106" y="136" width="300" height="200" rx="20" ry="20" fill="#242424" stroke="white" stroke-width="10"/>
+  
+  <!-- Radio Knobs -->
+  <circle cx="156" cy="380" r="30" fill="#dddddd" />
+  <circle cx="356" cy="380" r="30" fill="#dddddd" />
+  
+  <!-- Speaker Grill -->
+  <rect x="206" y="360" width="100" height="10" rx="5" fill="#aaaaaa" />
+  <rect x="206" y="380" width="100" height="10" rx="5" fill="#aaaaaa" />
+  <rect x="206" y="400" width="100" height="10" rx="5" fill="#aaaaaa" />
+  
+  <!-- Antenna -->
+  <line x1="256" y1="136" x2="156" y2="56" stroke="white" stroke-width="10" stroke-linecap="round"/>
+  <line x1="256" y1="136" x2="356" y2="56" stroke="white" stroke-width="10" stroke-linecap="round"/>
+  <circle cx="156" cy="56" r="10" fill="#ff5555" />
+  <circle cx="356" cy="56" r="10" fill="#ff5555" />
+  
+  <!-- Play Button on Screen -->
+  <path d="M236 186 L306 236 L236 286 Z" fill="white" />
+</svg>

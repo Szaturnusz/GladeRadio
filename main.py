@@ -15,6 +15,7 @@ import requests
 import threading
 import json
 import os
+import sys
 import bz2
 import io
 from PIL import Image
@@ -22,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Alkalmazás nevének beállítása (hogy ne main.py legyen az ablak címe)
 GLib.set_prgname("gladeradio")
-GLib.set_application_name("GladeRádió")
+GLib.set_application_name("NetRadio & TV")
 
 # GStreamer debug üzenetek letiltása
 os.environ['GST_DEBUG'] = '0'
@@ -100,9 +101,33 @@ class ScrollingLabel(Gtk.ScrolledWindow):
         self.h_adj.set_value(self.scroll_pos)
         return True
 
+# Ismert működő stream helyettesítések (ha az API hibás/audio linket ad)
+STREAM_OVERRIDES = {
+    "CCTV-1": "http://ivi.bupt.edu.cn/hls/cctv1hd.m3u8",
+    "CCTV-2": "http://ivi.bupt.edu.cn/hls/cctv2hd.m3u8",
+    "CCTV-3": "http://ivi.bupt.edu.cn/hls/cctv3hd.m3u8",
+    "CCTV-4": "http://ivi.bupt.edu.cn/hls/cctv4hd.m3u8",
+    "CCTV-5": "http://ivi.bupt.edu.cn/hls/cctv5hd.m3u8",
+    "CCTV-5+": "http://ivi.bupt.edu.cn/hls/cctv5phd.m3u8",
+    "CCTV-6": "http://ivi.bupt.edu.cn/hls/cctv6hd.m3u8",
+    "CCTV-7": "http://ivi.bupt.edu.cn/hls/cctv7hd.m3u8",
+    "CCTV-8": "http://ivi.bupt.edu.cn/hls/cctv8hd.m3u8",
+    "CCTV-9": "http://ivi.bupt.edu.cn/hls/cctv9hd.m3u8",
+    "CCTV-10": "http://ivi.bupt.edu.cn/hls/cctv10hd.m3u8",
+    "CCTV-11": "http://ivi.bupt.edu.cn/hls/cctv11hd.m3u8",
+    "CCTV-12": "http://ivi.bupt.edu.cn/hls/cctv12hd.m3u8",
+    "CCTV-13": "http://ivi.bupt.edu.cn/hls/cctv13hd.m3u8",
+    "CCTV-14": "http://ivi.bupt.edu.cn/hls/cctv14hd.m3u8",
+    "CCTV-15": "http://ivi.bupt.edu.cn/hls/cctv15hd.m3u8",
+    "CETV-1": "http://ivi.bupt.edu.cn/hls/cetv1.m3u8",
+    "CETV-2": "http://ivi.bupt.edu.cn/hls/cetv2.m3u8",
+    "CETV-3": "http://ivi.bupt.edu.cn/hls/cetv3.m3u8",
+    "CETV-4": "http://ivi.bupt.edu.cn/hls/cetv4.m3u8",
+}
+
 class RadioApp(Gtk.Window):
     def __init__(self):
-        super().__init__(title="Pro Radio Player")
+        super().__init__(title="NetRadio & TV Player")
         
         # Ablak alapbeállítások
         self.set_default_size(1000, 700)
@@ -126,14 +151,8 @@ class RadioApp(Gtk.Window):
         
         # GStreamer setup
         Gst.init(None)
-        self.player = Gst.ElementFactory.make("playbin", "player")
-        self.player.connect("source-setup", self.on_source_setup)
-        bus = self.player.get_bus()
-        bus.add_signal_watch()
-        bus.enable_sync_message_emission() # Fontos a videó ablakhoz
-        bus.connect("message::tag", self.on_tag_message)
-        bus.connect("message::error", self.on_player_error)
-        bus.connect("sync-message::element", self.on_sync_message)
+        self.player = None
+        self.create_player()
 
         # Videó ablak előkészítése (TV csatornákhoz)
         self.video_window = Gtk.Window(title="ÉlőTv")
@@ -145,20 +164,48 @@ class RadioApp(Gtk.Window):
             
         self.video_window.set_default_size(800, 450)
         self.video_window.connect("delete-event", self.on_video_window_close)
+        self.video_window.connect("key-press-event", self.on_video_key_press) # ESC kezelés
+        
+        # EventBox a dupla kattintás érzékeléséhez
+        self.video_eventbox = Gtk.EventBox()
+        self.video_eventbox.connect("button-press-event", self.on_video_click)
+        self.video_window.add(self.video_eventbox)
+        
         self.video_area = Gtk.DrawingArea()
         self.video_area.set_double_buffered(False)
-        self.video_window.add(self.video_area)
+        self.video_eventbox.add(self.video_area)
         
         # Fontos: a widgetnek láthatónak kell lennie (flag), hogy legyen ablaka
+        self.video_eventbox.show()
         self.video_area.show()
         
         # Realize kell, hogy legyen XID
         self.video_window.realize()
+        self.video_eventbox.realize()
         self.video_area.realize()
+        
+        self.is_fullscreen = False
         
         window = self.video_area.get_window()
         if window:
-            self.video_xid = window.get_xid()
+            if sys.platform == "win32":
+                # Windows alatt a handle lekérése trükkösebb lehet
+                try:
+                    # PyGObject Windows build-eknél néha elérhető a handle
+                    if hasattr(window, "get_handle"):
+                        self.video_xid = window.get_handle()
+                    else:
+                        # Ha nincs közvetlen handle, ctypes segítségével próbálkozhatunk (opcionális)
+                        # Egyelőre hagyjuk None-on, a GStreamer autovideosink talán megoldja új ablakban
+                        self.video_xid = None
+                except:
+                    self.video_xid = None
+            else:
+                # Linux / X11
+                try:
+                    self.video_xid = window.get_xid()
+                except:
+                    self.video_xid = None
         else:
             print("Hiba: Nem sikerült lekérni az XID-t a videóhoz")
             self.video_xid = None
@@ -169,9 +216,37 @@ class RadioApp(Gtk.Window):
         # Adatok betöltése háttérszálon, hogy ne fagyjon le az UI
         threading.Thread(target=self.load_radios_bg, daemon=True).start()
 
+    def create_player(self):
+        # Régi player takarítása
+        if self.player:
+            self.player.set_state(Gst.State.NULL)
+            bus = self.player.get_bus()
+            bus.remove_signal_watch()
+            self.player = None
+            
+        # Új player létrehozása
+        self.player = Gst.ElementFactory.make("playbin", "player")
+        
+        # Pufferelés beállítása (3 másodperc) - Akadozásmentességért
+        # buffer-duration nanosecundumban van
+        try:
+            self.player.set_property("buffer-duration", 3 * 1000000000)
+            self.player.set_property("buffer-size", 4 * 1024 * 1024) # 4MB
+        except:
+            pass
+            
+        self.player.connect("source-setup", self.on_source_setup)
+        
+        bus = self.player.get_bus()
+        bus.add_signal_watch()
+        bus.enable_sync_message_emission() # Fontos a videó ablakhoz
+        bus.connect("message::tag", self.on_tag_message)
+        bus.connect("message::error", self.on_player_error)
+        bus.connect("sync-message::element", self.on_sync_message)
+
     def setup_icon(self):
-        # Ikon keresése: először a Glade.png, aztán app_icon.png, végül letöltés
-        possible_icons = ["Glade.png", "app_icon.png"]
+        # Ikon keresése: először a logo.svg, aztán Glade.png, stb.
+        possible_icons = ["logo.svg", "Glade.png", "app_icon.png"]
         icon_path = None
         
         # Abszolút útvonal meghatározása (hogy telepítve is megtalálja)
@@ -276,8 +351,8 @@ class RadioApp(Gtk.Window):
         # HeaderBar (Címsor)
         header = Gtk.HeaderBar()
         header.set_show_close_button(True)
-        header.set_title("Pro Radio Player")
-        header.set_subtitle("Online Rádió Böngésző")
+        header.set_title("NetRadio & TV")
+        header.set_subtitle("Online Média Lejátszó")
         self.set_titlebar(header)
 
         # Kereső a fejlécben
@@ -498,8 +573,19 @@ class RadioApp(Gtk.Window):
         if category == "favorites":
             source_list = [r for r in self.radios if r['stationuuid'] in self.favorites]
         elif category == "tv":
-            # TV csatornák szűrése címkék alapján
-            source_list = [r for r in self.radios if 'tv' in r.get('tags', '').lower().split(',') or 'video' in r.get('tags', '').lower() or 'television' in r.get('tags', '').lower()]
+            # TV csatornák szűrése címkék ÉS kodek alapján
+            def is_tv(r):
+                tags = r.get('tags', '').lower()
+                codec = r.get('codec', '').lower()
+                # Címke alapú szűrés
+                if 'tv' in tags.split(',') or 'video' in tags or 'television' in tags:
+                    return True
+                # Kodek alapú szűrés (ha a címke hiányozna)
+                if 'h.264' in codec or 'h.265' in codec or 'mp4' in codec or 'vp8' in codec or 'vp9' in codec:
+                    return True
+                return False
+            
+            source_list = [r for r in self.radios if is_tv(r)]
         elif category.startswith("country:"):
             country_name = category.split(":", 1)[1]
             source_list = [r for r in self.radios if r.get('country') == country_name]
@@ -697,26 +783,70 @@ class RadioApp(Gtk.Window):
 
     def on_sync_message(self, bus, msg):
         # Videó ablak kezelése
-        if msg.get_structure().get_name() == "prepare-window-handle":
+        structure = msg.get_structure()
+        if structure and structure.get_name() == "prepare-window-handle":
             if self.video_xid:
+                sink = msg.src
+                
+                # FONTOS: Először jelenítsük meg az ablakot, hogy az XID érvényes/látható legyen
+                # A GStreamer sink-ek (pl. xvimagesink) néha elhasalnak, ha nem map-olt ablakra kötünk.
+                # Mivel ez a sync handler (streaming thread), a GUI hívást idle_add-dal kellene,
+                # DE az aszinkron lehet.
+                # A legjobb trükk: A play_radio-ban NEM rejtjük el az ablakot.
+                
                 try:
-                    # GStreamer kéri az ablakot - Egyszerű és működő módszer
-                    msg.src.set_window_handle(self.video_xid)
+                    # 1. Próba: GstVideo.Overlay interfész
+                    if GstVideo:
+                        GstVideo.Overlay.set_window_handle(sink, self.video_xid)
+                    else:
+                        raise Exception("GstVideo nem elérhető")
                 except Exception as e:
-                    print(f"Video overlay hiba: {e}")
+                    # 2. Próba: Közvetlen metódus
+                    try:
+                        if hasattr(sink, "set_window_handle"):
+                            sink.set_window_handle(self.video_xid)
+                    except Exception as e2:
+                        print(f"Fallback hiba: {e2}")
                 
                 def show_win():
-                    self.video_window.set_title("ÉlőTv")
-                    self.video_window.show_all()
+                    self.video_window.set_title(f"ÉlőTv - {self.current_radio.get('name', '') if self.current_radio else ''}")
+                    if not self.video_window.get_visible():
+                        self.video_window.show_all()
+                    self.video_window.present()
                     return False
                 
-                # Megjelenítjük az ablakot (főszálon)
                 GLib.idle_add(show_win)
+
+    def on_video_click(self, widget, event):
+        if event.type == Gdk.EventType._2BUTTON_PRESS:
+            self.toggle_fullscreen()
+            return True
+        return False
+
+    def on_video_key_press(self, widget, event):
+        if event.keyval == Gdk.KEY_Escape:
+            if self.is_fullscreen:
+                self.toggle_fullscreen()
+            return True
+        return False
+
+    def toggle_fullscreen(self):
+        if self.is_fullscreen:
+            self.video_window.unfullscreen()
+            self.is_fullscreen = False
+        else:
+            self.video_window.fullscreen()
+            self.is_fullscreen = True
 
     def on_video_window_close(self, widget, event):
         # Nem zárjuk be, csak elrejtjük
         self.player.set_state(Gst.State.NULL) # Leállítjuk a lejátszást is
         self.btn_play.set_image(Gtk.Image.new_from_icon_name("media-playback-start-symbolic", Gtk.IconSize.LARGE_TOOLBAR))
+        
+        if self.is_fullscreen:
+            self.video_window.unfullscreen()
+            self.is_fullscreen = False
+            
         widget.hide()
         return True
 
@@ -724,7 +854,15 @@ class RadioApp(Gtk.Window):
         self.current_radio = radio
         
         # Videó ablak elrejtése (ha előzőleg nyitva volt)
-        self.video_window.hide()
+        # FONTOS: Nem rejtjük el azonnal, mert ha az új is videó, akkor villogna
+        # vagy elveszne az XID. Hagyjuk, hogy az on_sync_message kezelje,
+        # vagy ha audio stream jön, akkor majd bezárjuk (később implementálható)
+        # De a biztonság kedvéért most elrejtjük, és az on_sync_message visszahozza.
+        # JAVÍTÁS: Ha itt elrejtjük, az X ablak unmap-olódhat, és a GStreamer
+        # nem tud csatlakozni. Ezért inkább CSAK akkor rejtjük el, ha a felhasználó
+        # explicit bezárta, vagy ha biztosan tudjuk, hogy audio.
+        # Most inkább hagyjuk nyitva, de alaphelyzetbe állítjuk.
+        # self.video_window.hide() 
         
         # UI frissítés
         self.lbl_title.set_markup(f"<b>{radio.get('name')}</b>")
@@ -738,12 +876,28 @@ class RadioApp(Gtk.Window):
         threading.Thread(target=self.start_playback_async, args=(radio.get('url'),), daemon=True).start()
 
     def start_playback_async(self, url):
+        # Név alapú felülbírálás (ha van jobb forrásunk)
+        if self.current_radio:
+            name = self.current_radio.get('name', '')
+            # Keresés a STREAM_OVERRIDES-ben részleges egyezéssel
+            for key, override_url in STREAM_OVERRIDES.items():
+                # Ha a név tartalmazza a kulcsot (pl. "CCTV-1" benne van a "CCTV-1 综合" névben)
+                # De vigyázzunk: CCTV-1 ne egyezzen CCTV-10-zel -> szóhatár vagy pontosabb illesztés kellene
+                # Egyszerűsített: Ha a név kezdődik vele, vagy szóközökkel határolt
+                if key == name or f"{key} " in name or f" {key}" in name or f"({key})" in name:
+                    print(f"Stream felülbírálva: {key} -> {override_url}")
+                    url = override_url
+                    break
+                    
         resolved = self.resolve_url(url)
         print(f"Lejátszás indítása: {resolved}")
         GLib.idle_add(self.start_gstreamer, resolved)
 
     def start_gstreamer(self, url):
-        self.player.set_state(Gst.State.NULL)
+        # Teljes újraindítás minden váltásnál a tiszta állapotért
+        # Ez megoldja a videó ablak újranyitási problémákat is
+        self.create_player()
+        
         self.player.set_property("uri", url)
         self.player.set_state(Gst.State.PLAYING)
 
@@ -751,12 +905,26 @@ class RadioApp(Gtk.Window):
         # Playlist fájlok (.m3u, .pls) manuális feloldása, 
         # mert a GStreamer néha elhasal rajtuk (text/uri-list hiba)
         # DE: Modern streaming formátumokat (HLS, DASH, Video) NE bántsuk!
+        
+        # Ázsiai TV javítás (AliCDN audio-only paraméterek eltávolítása)
+        if "myalicdn.com" in url and ("BR=audio" in url or "adapt=0" in url):
+            url = url.replace("BR=audio", "").replace("adapt=0", "").replace("?&", "?").replace("&&", "&").strip("?&")
+            # Ha az URL vége ? vagy &, vágjuk le
+            if url.endswith("?") or url.endswith("&"):
+                url = url[:-1]
+        
         skip_extensions = ('.m3u8', '.mpd', '.mp4', '.webm', '.mkv', '.flv')
         if url.lower().endswith(('.m3u', '.pls')) and not url.lower().endswith(skip_extensions):
             try:
                 resp = requests.get(url, timeout=5)
                 if resp.status_code == 200:
                     content = resp.text
+                    
+                    # HLS detektálás: Ha HLS tagek vannak benne, hagyjuk a GStreamerre
+                    # Mert a manuális sor-kiválasztás elronthatja a relatív linkeket vagy a sávszélesség-választást
+                    if "#EXT-X-STREAM-INF" in content or "#EXT-X-TARGETDURATION" in content:
+                        return url
+
                     lines = content.splitlines()
                     
                     # PLS formátum

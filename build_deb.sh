@@ -44,21 +44,29 @@ chmod +x "${BUILD_DIR}/usr/bin/${APP_NAME}"
 # Desktop fájl
 cat <<EOF > "${BUILD_DIR}/usr/share/applications/${APP_NAME}.desktop"
 [Desktop Entry]
-Name=GladeRádió
-Comment=Hallgass online rádiókat
+Name=NetRadio & TV
+Comment=Online Rádió és TV Lejátszó
 Exec=${APP_NAME}
 Icon=${APP_NAME}
 Terminal=false
 Type=Application
-Categories=Audio;AudioVideo;Player;
-Keywords=radio;music;stream;
+Categories=Audio;AudioVideo;Player;TV;
+Keywords=radio;music;stream;tv;
 EOF
 
 # Fájlok másolása
 cp main.py "${BUILD_DIR}/usr/share/${APP_NAME}/"
+if [ -f "logo.svg" ]; then
+    cp "logo.svg" "${BUILD_DIR}/usr/share/${APP_NAME}/logo.svg"
+fi
 
 # Ikon kezelése
-if [ -f "Glade.png" ]; then
+if [ -f "logo.svg" ]; then
+    echo "logo.svg megtalálva, másolás..."
+    # SVG ikon helye
+    mkdir -p "${BUILD_DIR}/usr/share/icons/hicolor/scalable/apps"
+    cp "logo.svg" "${BUILD_DIR}/usr/share/icons/hicolor/scalable/apps/${APP_NAME}.svg"
+elif [ -f "Glade.png" ]; then
     echo "Glade.png megtalálva, másolás..."
     cp "Glade.png" "${BUILD_DIR}/usr/share/${APP_NAME}/Glade.png"
     cp "Glade.png" "${BUILD_DIR}/usr/share/icons/hicolor/512x512/apps/${APP_NAME}.png"
